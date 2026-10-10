@@ -1,0 +1,25 @@
+# dependencies
+node_modules
+.pnpm-store
+
+# build output
+dist
+dist-ssr
+*.local
+
+# typescript incremental build info
+*.tsbuildinfo
+
+# rust / tauri
+src-tauri/target
+src-tauri/gen
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# logs
+npm-debug.log*
+pnpm-debug.log*
