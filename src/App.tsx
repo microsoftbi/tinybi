@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Database, LayoutDashboard, TerminalSquare, FilePlus2, FolderOpen, Save } from "lucide-react";
+import { Database, LayoutDashboard, FilePlus2, FolderOpen, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
@@ -20,7 +20,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { DataSourceView } from "@/features/datasource/DataSourceView";
-import { SqlView } from "@/features/sql/SqlView";
 import { DashboardView } from "@/features/dashboard/DashboardView";
 import { useViewStore, type ViewKey } from "@/stores/viewStore";
 import { importDataFile, openProject, saveProject } from "@/lib/project";
@@ -28,7 +27,6 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS: Array<{ key: ViewKey; label: string; icon: typeof Database }> = [
   { key: "datasource", label: "数据源", icon: Database },
-  { key: "sql", label: "SQL 查询", icon: TerminalSquare },
   { key: "dashboard", label: "仪表盘", icon: LayoutDashboard },
 ];
 
@@ -113,7 +111,7 @@ export default function App() {
         {/* 主区域 */}
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-            <span className="text-sm font-semibold">Mac BI Desktop</span>
+            <span className="text-sm font-semibold">TINY BI</span>
             <Separator orientation="vertical" className="h-5" />
             <span className="text-sm text-muted-foreground">
               {NAV_ITEMS.find((n) => n.key === view)?.label}
@@ -134,13 +132,7 @@ export default function App() {
           </header>
 
           <main className="min-h-0 flex-1">
-            {view === "datasource" ? (
-              <DataSourceView />
-            ) : view === "sql" ? (
-              <SqlView />
-            ) : (
-              <DashboardView />
-            )}
+            {view === "datasource" ? <DataSourceView /> : <DashboardView />}
           </main>
         </div>
       </div>

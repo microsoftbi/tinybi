@@ -41,6 +41,15 @@ interface DragState {
   cursor: string;
 }
 
+/** 指针按下后登记的「候选拖动」，位移超过阈值才升级为真正的拖动 */
+interface PendingDrag {
+  id: string;
+  mode: "move" | ResizeDir;
+  startX: number;
+  startY: number;
+  origin: Rect;
+}
+
 const RESIZE_DIRS: ResizeDir[] = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 
 /** 判断指针是否落在交互元素上（按钮/输入等不应触发整块拖动） */
@@ -48,6 +57,9 @@ const INTERACTIVE_SELECTOR = "button,input,select,textarea,a,[data-no-drag]";
 
 const PAGE_MIN_H = 720;
 const PAGE_BOTTOM_GAP = 60;
+
+/** 指针位移超过该阈值（px）才视为拖动，否则按点击处理 */
+const DRAG_THRESHOLD = 3;
 
 /**
  * Power BI 风格的报表画布：视觉对象绝对定位、整块可拖、自由缩放，
@@ -77,10 +89,13 @@ export function ReportCanvas({
 
   // 供 window 事件监听读取的最新值（避免频繁重订阅）
   const dragRef = useRef<DragState | null>(null);
+  const pendingRef = useRef<PendingDrag | null>(null);
+  const suppressClickRef = useRef(false);
   const previewRef = useRef<Rect | null>(null);
   const widgetsRef = useRef(widgets);
   const pageRef = useRef({ w: pageW, h: pageH });
   const onLayoutRef = useRef(onLayout);
+  const onSelectRef = useRef(onSelect);
 
   useEffect(() => {
     widgetsRef.current = widgets;
@@ -91,6 +106,9 @@ export function ReportCanvas({
   useEffect(() => {
     onLayoutRef.current = onLayout;
   }, [onLayout]);
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
 
   // 测量画布可用宽度
   useLayoutEffect(() => {
@@ -119,21 +137,19 @@ export function ReportCanvas({
   const beginDrag = useCallback(
     (widget: ChartWidget, mode: "move" | ResizeDir, e: React.PointerEvent) => {
       if (e.button !== 0) return;
-      e.preventDefault();
-      onSelect(widget.id);
-      const state: DragState = {
+      // 新的指针手势开始：清除可能残留的「吞掉下一次 click」标志
+      suppressClickRef.current = false;
+      // 仅登记候选拖动，不做任何状态更新/阻止默认行为：
+      // 这样普通点击不会触发重渲染，图表图元的 click 事件得以正常派发。
+      pendingRef.current = {
         id: widget.id,
         mode,
         startX: e.clientX,
         startY: e.clientY,
         origin: widget.layout,
-        cursor: mode === "move" ? "grabbing" : `${mode}-resize`,
       };
-      dragRef.current = state;
-      previewRef.current = widget.layout;
-      setDrag(state);
     },
-    [onSelect],
+    [],
   );
 
   const handleWidgetPointerDown = useCallback(
@@ -152,11 +168,31 @@ export function ReportCanvas({
     [beginDrag],
   );
 
-  // 全局指针事件：拖动/缩放 + 吸附 + 释放提交
+  // 全局指针事件：位移超阈值后进入拖动/缩放 + 吸附 + 释放提交
   useEffect(() => {
     function onMove(e: PointerEvent) {
-      const d = dragRef.current;
-      if (!d) return;
+      let d = dragRef.current;
+      if (!d) {
+        // 尚未进入拖动：检查候选拖动是否已超过位移阈值
+        const p = pendingRef.current;
+        if (!p) return;
+        if (Math.hypot(e.clientX - p.startX, e.clientY - p.startY) < DRAG_THRESHOLD) {
+          return;
+        }
+        onSelectRef.current(p.id);
+        const state: DragState = {
+          id: p.id,
+          mode: p.mode,
+          startX: p.startX,
+          startY: p.startY,
+          origin: p.origin,
+          cursor: p.mode === "move" ? "grabbing" : `${p.mode}-resize`,
+        };
+        dragRef.current = state;
+        previewRef.current = p.origin;
+        setDrag(state);
+        d = state;
+      }
       const { w: pw, h: ph } = pageRef.current;
       const others = widgetsRef.current
         .filter((w) => w.id !== d.id)
@@ -186,8 +222,11 @@ export function ReportCanvas({
     }
 
     function onUp() {
+      pendingRef.current = null;
       const d = dragRef.current;
       if (!d) return;
+      // 确实是拖动：吞掉紧随其后的 click，避免误触图元选中/高亮
+      suppressClickRef.current = true;
       const rect = previewRef.current;
       if (
         rect &&
@@ -205,13 +244,23 @@ export function ReportCanvas({
       setGuides({ v: [], h: [] });
     }
 
+    // 捕获阶段拦截拖动结束后的 click
+    function onClickCapture(e: MouseEvent) {
+      if (!suppressClickRef.current) return;
+      suppressClickRef.current = false;
+      e.stopPropagation();
+      e.preventDefault();
+    }
+
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
+    document.addEventListener("click", onClickCapture, true);
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      document.removeEventListener("click", onClickCapture, true);
     };
   }, []);
 
@@ -246,6 +295,7 @@ export function ReportCanvas({
           <div
             key={w.id}
             onPointerDown={(e) => handleWidgetPointerDown(e, w)}
+            onClick={() => onSelect(w.id)}
             className={cn(
               "group absolute flex touch-none select-none flex-col rounded-md border bg-background shadow-sm",
               isSelected ? "z-10 ring-2 ring-[#2563eb]" : "z-0",

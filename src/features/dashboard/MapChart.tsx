@@ -38,8 +38,8 @@ interface MapPath {
   d: string;
   fill: string;
   name: string;
-  /** 与数据匹配的标签，未匹配到数据时为 null */
-  label: string | null;
+  /** 命中该区域的数据标签（可能多个，如广州/深圳同属广东）；未匹配到数据时为空数组 */
+  labels: string[];
   value: number | null;
 }
 
@@ -114,15 +114,24 @@ export function MapChart({
     if (!geo || size.width <= 0 || size.height <= 0) return empty;
 
     const index = buildRegionIndex(geo);
+    // 一个区域可能命中多个数据值（如广州、深圳同属广东，被上卷到省级），
+    // 度量按区域求和，标签保留全部命中值（用于高亮与点击）。
     const valueByIndex = new Map<number, number>();
-    const labelByIndex = new Map<number, string>();
+    const labelsByIndex = new Map<number, string[]>();
     for (const row of rows) {
       const label = String(row[dimensionKey] ?? "");
       const idx = matchRegion(label, index);
       if (idx < 0) continue;
-      labelByIndex.set(idx, label);
       const v = row[valueKey];
-      if (typeof v === "number") valueByIndex.set(idx, v);
+      if (typeof v === "number") {
+        valueByIndex.set(idx, (valueByIndex.get(idx) ?? 0) + v);
+      }
+      const labels = labelsByIndex.get(idx);
+      if (labels) {
+        if (!labels.includes(label)) labels.push(label);
+      } else {
+        labelsByIndex.set(idx, [label]);
+      }
     }
     const [minV, maxV] = extent(Array.from(valueByIndex.values())) ?? [0, 0];
     const colorOf = makeColorScale(minV, maxV);
@@ -139,7 +148,7 @@ export function MapChart({
         d: featureToPath(f, proj),
         fill: value === null ? MAP_NO_DATA_COLOR : colorOf(value),
         name,
-        label: labelByIndex.get(i) ?? null,
+        labels: labelsByIndex.get(i) ?? [],
         value,
       };
     });
@@ -174,17 +183,22 @@ export function MapChart({
             preserveAspectRatio="xMidYMid meet"
           >
             {paths.map((p) => {
-              const clickable = p.label !== null && onPointClick;
+              const matched = p.labels.length > 0;
+              const clickable = matched && onPointClick;
+              // 区域内任一数据值命中高亮即保持实色，否则变暗
+              const opacity = matched
+                ? Math.max(
+                    ...p.labels.map((l) =>
+                      cellOpacity(highlight, dimensionKey, l),
+                    ),
+                  )
+                : 1;
               return (
                 <path
                   key={p.index}
                   d={p.d}
                   fill={p.fill}
-                  fillOpacity={
-                    p.label === null
-                      ? 1
-                      : cellOpacity(highlight, dimensionKey, p.label)
-                  }
+                  fillOpacity={opacity}
                   stroke="#ffffff"
                   strokeWidth={0.6}
                   strokeLinejoin="round"
@@ -195,7 +209,7 @@ export function MapChart({
                       ? (e) =>
                           onPointClick(
                             dimensionKey,
-                            p.label as string,
+                            p.labels[0],
                             e.metaKey || e.ctrlKey,
                           )
                       : undefined

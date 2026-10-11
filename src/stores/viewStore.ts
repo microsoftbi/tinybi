@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type ViewKey = "datasource" | "sql" | "dashboard";
+export type ViewKey = "datasource" | "dashboard";
 
 interface ViewState {
   view: ViewKey;

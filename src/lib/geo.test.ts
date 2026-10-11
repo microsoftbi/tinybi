@@ -46,6 +46,21 @@ const chinaFc: GeoFeatureCollection = {
         ],
       },
     },
+    {
+      type: "Feature",
+      properties: { name: "四川省" },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [102, 28],
+            [106, 28],
+            [106, 32],
+            [102, 32],
+          ],
+        ],
+      },
+    },
   ],
 };
 
@@ -117,6 +132,13 @@ describe("matchRegion", () => {
     expect(matchRegion("united states", worldIndex)).toBe(-1);
   });
 
+  it("地级市上卷到所属省份要素", () => {
+    expect(matchRegion("深圳", chinaIndex)).toBe(0);
+    expect(matchRegion("广州市", chinaIndex)).toBe(0);
+    expect(matchRegion("成都", chinaIndex)).toBe(2);
+    expect(matchRegion("绵阳市", chinaIndex)).toBe(2);
+  });
+
   it("常见国家中文别名可映射到英文要素", () => {
     expect(matchRegion("中国", worldIndex)).toBe(0);
     expect(matchRegion("美国", worldIndex)).toBe(1);
@@ -181,6 +203,12 @@ describe("detectScope", () => {
 
   it("省份数据识别为 china", () => {
     expect(detectScope(["广东", "内蒙古"], chinaIndex, worldIndex)).toBe(
+      "china",
+    );
+  });
+
+  it("纯城市数据经上卷后识别为 china", () => {
+    expect(detectScope(["深圳", "成都"], chinaIndex, worldIndex)).toBe(
       "china",
     );
   });
